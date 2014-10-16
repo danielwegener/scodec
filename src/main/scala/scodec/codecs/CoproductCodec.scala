@@ -59,7 +59,7 @@ private[scodec] object CoproductCodec {
       value <- DecodingContext(decoder.decode)
     } yield value).run(buffer)
 
-    override def toString = codecs.toList.mkString("(", " :+: ", ")") + s" by $discriminatorCodec"
+    override def toString = liftedCodecs.mkString("(", " :+: ", ")") + s" by $discriminatorCodec"
   }
 
   /** Codec that encodes/decodes a coproduct `C`. */
@@ -74,7 +74,7 @@ private[scodec] object CoproductCodec {
 
     def decode(buffer: BitVector) = decoder.decode(buffer)
 
-    override def toString = codecs.toList.mkString("choice(", " :+: ", ")")
+    override def toString = liftedCodecs.mkString("choice(", " :+: ", ")")
   }
 }
 

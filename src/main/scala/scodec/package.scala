@@ -86,7 +86,7 @@ package object scodec {
     def :::[K <: HList, KL <: HList, KLen <: Nat](k: Codec[K])(implicit
       prepend: Prepend.Aux[K, L, KL],
       lengthK: Length.Aux[K, KLen],
-      split: Split.Aux[KL, KLen, (K, L)]
+      split: Split.Aux[KL, KLen, K, L]
     ): Codec[KL] = HListCodec.concat(k, self)
 
     /**

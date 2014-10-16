@@ -41,7 +41,7 @@ private[scodec] object HListCodec {
   def concat[K <: HList, L <: HList, KL <: HList, KLen <: Nat](ck: Codec[K], cl: Codec[L])(implicit
     prepend: Prepend.Aux[K, L, KL],
     lengthK: Length.Aux[K, KLen],
-    split: Split.Aux[KL, KLen, (K, L)]
+    split: Split.Aux[KL, KLen, K, L]
   ): Codec[KL] = new Codec[KL] {
     override def encode(xs: KL) = {
       val (k, l) = xs.split[KLen]

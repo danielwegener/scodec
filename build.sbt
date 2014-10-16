@@ -54,7 +54,7 @@ resolvers += "Sonatype Public" at "https://oss.sonatype.org/content/groups/publi
 libraryDependencies ++= Seq(
   "org.typelevel" %% "scodec-bits" % "1.0.4",
   "org.scalaz" %% "scalaz-core" % "7.1.0",
-  "com.chuusai" % "shapeless" % "2.0.0" cross CrossVersion.fullMapped {
+  "com.chuusai" % "shapeless" % "2.1.0-SNAPSHOT" cross CrossVersion.fullMapped {
     case "2.10.4" => "2.10.4"
     case "2.11.0" => "2.11"
   },

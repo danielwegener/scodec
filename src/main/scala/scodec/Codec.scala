@@ -5,6 +5,7 @@ import scala.language.implicitConversions
 import scalaz.{ \/, InvariantFunctor, Monoid, StateT }
 import \/.left
 import shapeless._
+import shapeless.labelled.FieldType
 import shapeless.record._
 import shapeless.ops.hlist._
 import shapeless.ops.record._
@@ -330,7 +331,7 @@ object Codec extends EncoderFunctions with DecoderFunctions {
       val codec = {
         import codecs.StringEnrichedWithCodecNamingSupport
         val namedHeadCodec: Codec[VH] = keys().head.name | headCodec
-        val headFieldCodec: Codec[FieldType[KH, VH]] = namedHeadCodec.xmap[FieldType[KH, VH]](vh => field[KH](vh), identity)
+        val headFieldCodec: Codec[FieldType[KH, VH]] = namedHeadCodec.xmap[FieldType[KH, VH]](vh => labelled.field[KH](vh), identity)
         headFieldCodec :: tailAux.codec
       }
     }
