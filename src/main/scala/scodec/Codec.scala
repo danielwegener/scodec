@@ -210,8 +210,15 @@ trait Codec[A] extends GenCodec[A, A] { self =>
    * Supports creation of a coproduct codec. See [[scodec.codecs.CoproductCodecBuilder]] for details.
    * @group coproduct
    */
-  def :+:[B](left: Codec[B]): codecs.CoproductCodecBuilder[B :+: A :+: CNil, Codec[B] :: Codec[A] :: HNil] =
-    new codecs.CoproductCodecBuilder(left :: self :: HNil)
+  def :+:[B](left: Codec[B]): codecs.CoproductCodecBuilder[B :+: A :+: CNil, Codec[B] :: Codec[A] :: HNil, B :+: A :+: CNil] =
+    codecs.CoproductCodecBuilder(left :: self :: HNil)
+
+  /**
+   * Lifts this codec to a codec of a shapeless field -- allowing it to be used in records and unions.
+   * @group combinators
+   */
+  def toField[K]: Codec[FieldType[K, A]] =
+    xmap[FieldType[K, A]](a => labelled.field[K](a), identity)
 }
 
 /**
@@ -331,7 +338,7 @@ object Codec extends EncoderFunctions with DecoderFunctions {
       val codec = {
         import codecs.StringEnrichedWithCodecNamingSupport
         val namedHeadCodec: Codec[VH] = keys().head.name | headCodec
-        val headFieldCodec: Codec[FieldType[KH, VH]] = namedHeadCodec.xmap[FieldType[KH, VH]](vh => labelled.field[KH](vh), identity)
+        val headFieldCodec: Codec[FieldType[KH, VH]] = namedHeadCodec.toField[KH]
         headFieldCodec :: tailAux.codec
       }
     }
@@ -347,6 +354,7 @@ object Codec extends EncoderFunctions with DecoderFunctions {
   /**
    * Creates a coproduct codec builder for the specified type.
    *
+   * Support exists for coproducts and unions.
    * Each component type must have an implicitly available codec.
    *
    * For example:
@@ -362,7 +370,7 @@ object Codec extends EncoderFunctions with DecoderFunctions {
   sealed trait CoproductAuto[A] extends DepFn0 {
     type C <: Coproduct
     type L <: HList
-    type Out = codecs.CoproductCodecBuilder[C, L]
+    type Out = codecs.CoproductCodecBuilder[C, L, A]
     def apply: Out
   }
 
@@ -374,7 +382,7 @@ object Codec extends EncoderFunctions with DecoderFunctions {
       new CoproductAuto[CNil] {
         type C = CNil
         type L = HNil
-        def apply = new codecs.CoproductCodecBuilder[CNil, HNil](HNil)
+        def apply = codecs.CoproductCodecBuilder(HNil)
       }
 
     implicit def coproduct[H, T <: Coproduct](implicit
@@ -386,6 +394,32 @@ object Codec extends EncoderFunctions with DecoderFunctions {
         type L = Codec[H] :: tailAux.L
         def apply = headCodec :+: tailAux.apply
       }
+
+    import shapeless.ops.union.{ Keys => UnionKeys }
+
+    implicit def union[KH <: Symbol, VH, T <: Coproduct, KT <: HList](implicit
+      headCodec: Codec[VH],
+      tailAux: CoproductAuto.Aux[T, T],
+      keys: UnionKeys.Aux[FieldType[KH, VH] :+: T, KH :: KT]
+    ): CoproductAuto.Aux[FieldType[KH, VH] :+: T, FieldType[KH, VH] :+: T] =
+      new CoproductAuto[FieldType[KH, VH] :+: T] {
+        type C = FieldType[KH, VH] :+: T
+        type L = Codec[FieldType[KH, VH]] :: tailAux.L
+        def apply = {
+          import codecs.StringEnrichedWithCodecNamingSupport
+          val namedHeadCodec: Codec[VH] = keys().head.name | headCodec
+          namedHeadCodec.toField[KH] :+: tailAux.apply
+        }
+      }
+
+    implicit def labelledGeneric[A, U <: Coproduct](implicit
+      lgen: LabelledGeneric.Aux[A, U],
+      auto: CoproductAuto.Aux[U, U]
+    ): CoproductAuto.Aux[A, U] = new CoproductAuto[A] {
+      type C = U
+      type L = auto.L
+      def apply = auto.apply.xmap(lgen.from, lgen.to)
+    }
   }
 
   val invariantFunctorInstance: InvariantFunctor[Codec] = new InvariantFunctor[Codec] {
