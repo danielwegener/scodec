@@ -5,6 +5,7 @@ import scalaz.\/
 import scalaz.syntax.std.option._
 
 import shapeless._
+import labelled.FieldType
 import record._
 import ops.coproduct._
 import ops.hlist._
