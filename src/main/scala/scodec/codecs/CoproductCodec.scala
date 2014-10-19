@@ -191,8 +191,7 @@ final class CoproductCodecBuilder[C <: Coproduct, L <: HList, R] private[scodec]
   final class NeedDiscriminators[A] private[CoproductCodecBuilder] (discriminatorCodec: Codec[A]) {
 
     /** Specified the discriminator values for each of the coproduct type members. */
-    def using[N <: Nat](discriminators: Sized[Seq[A], N])(implicit ev: ops.hlist.Length.Aux[L, N]): Codec[R] = {
-      // TODO Upon upgrading to shapeless 2.1, change the evidence param to ops.coproduct.Length
+    def using[N <: Nat](discriminators: Sized[Seq[A], N])(implicit ev: ops.coproduct.Length.Aux[C, N]): Codec[R] = {
       val toDiscriminator: C => A = c => discriminators.seq(CoproductCodec.indexOf(c))
       val fromDiscriminator: A => Option[Int] = a => {
         val idx = discriminators.seq.indexWhere { (x: A) => x == a }
