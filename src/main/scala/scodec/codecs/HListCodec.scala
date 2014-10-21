@@ -63,7 +63,7 @@ private[scodec] object HListCodec {
   def flatConcat[K <: HList, L <: HList, KL <: HList, KLen <: Nat](codecK: Codec[K], f: K => Codec[L])(implicit
     prepend: Prepend.Aux[K, L, KL],
     lengthK: Length.Aux[K, KLen],
-    split: Split.Aux[KL, KLen, (K, L)]
+    split: Split.Aux[KL, KLen, K, L]
   ): Codec[KL] = new Codec[KL] {
     override def encode(xs: KL) = {
       val (k, l) = xs.split[KLen]
@@ -79,7 +79,7 @@ private[scodec] object HListCodec {
   def flatAppend[L <: HList, A, LA <: HList, Len <: Nat](codecL: Codec[L], f: L => Codec[A])(implicit
     prepend: Prepend.Aux[L, A :: HNil, LA],
     length: Length.Aux[L, Len],
-    split: Split.Aux[LA, Len, (L, A :: HNil)]
+    split: Split.Aux[LA, Len, L, A :: HNil]
   ): Codec[LA] = new Codec[LA] {
     override def encode(xs: LA) = {
       val (l, rest) = xs.split[Len]
