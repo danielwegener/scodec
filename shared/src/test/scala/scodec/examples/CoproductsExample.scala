@@ -2,9 +2,10 @@ package scodec
 package examples
 
 import shapeless._
-
 import scodec.bits._
 import codecs._
+import scodec.Attempt.{Failure, Successful}
+import scodec.bits.Bases.Alphabets
 
 class CoproductsExample extends CodecSuite {
 
@@ -33,6 +34,71 @@ class CoproductsExample extends CodecSuite {
     // It requires that each subtype has an implicit codec available.
     // In this case, both `Woozle` and `Wocket` have implicit codecs
     // in their companions.
+
+    "demonstrate coproductParams" in {
+      // CoproductParams is a result from the coproduct auto resolution
+      val params: CoproductParams[Sprocket, Int] = Codec.coproduct[Sprocket].params[Int].using(Sized(2, 1))
+
+      // it provides a
+      val discriminatorCodec: Codec[Int] = params.discriminatorCodec
+      // it provides a resolver from a discriminator value to a codec for the appropriate coproduct member
+      val coproductResolver: (Int => Option[Codec[Sprocket]]) = params.discriminatorToCoproductCodec
+      // it provides a resolver from a coproduct value to the appropriate discriminator value
+      val discriminatorValueResolver: (Sprocket => Attempt[Int]) = params.coproductToDiscriminator
+
+
+      // A Vector codec that uses a CoproductParams to encode a Vector[R] as size :: discriminatorValues :: coproductValues
+      // Not proud of it, I bet this can be solved much much easier
+      class CoproductVectorOfN[A, R](sizeCodec: Codec[Int], params: CoproductParams[R, A]) extends Codec[Vector[R]] {
+        override def sizeBound: SizeBound = sizeCodec.sizeBound.atLeast
+        override def encode(values: Vector[R]): Attempt[BitVector] =
+
+          for {
+            sizeEncoded <- sizeCodec.encode(values.size)
+            discriminatorsEncoded <- values.foldLeft[Attempt[BitVector]](Attempt.successful(BitVector.empty)) {
+              case (Successful(akk), r) => params.coproductToDiscriminator(r).flatMap(params.discriminatorCodec.encode).map(akk ++ _)
+              case (f: Failure, _) => f
+            }
+            valuesEncoded <- values.foldLeft[Attempt[BitVector]](Attempt.successful(BitVector.empty)) {
+              case (Successful(akk), r) => params.coproductToDiscriminator(r).flatMap(d =>
+                Attempt.fromOption(params.discriminatorToCoproductCodec(d), Err(s"No coproduct codec for discriminator $d"))).flatMap(_.encode(r)).map(akk ++ _)
+              case (f: Failure, _) => f
+            }
+
+          } yield sizeEncoded ++ discriminatorsEncoded ++ valuesEncoded
+
+        override def decode(bits: BitVector): Attempt[DecodeResult[Vector[R]]] = for {
+          sizeDr <- sizeCodec.decode(bits)
+          discriminatorsDr <- Decoder.decodeCollect[Vector, A](params.discriminatorCodec, Some(sizeDr.value))(sizeDr.remainder)
+          valueCodecs <- discriminatorsDr.value.foldLeft[Attempt[Vector[Codec[R]]]](Attempt.successful(Vector.empty)) {
+            case (Successful(akku), next) => params.discriminatorToCoproductCodec(next) match {
+              case Some(e) => Successful(akku :+ e)
+              case None => Failure(Err(s"No coproduct codec for discriminator $next"))
+            }
+            case (f: Failure, _) => f
+          }
+          valuesDr <- valueCodecs.foldLeft[Attempt[DecodeResult[Vector[R]]]](Successful(DecodeResult(Vector.empty[R], discriminatorsDr.remainder))) {
+            case (Successful(DecodeResult(akk, rem)), codec) => codec.decode(rem) match {
+              case Successful(DecodeResult(r, remAfterSingle)) => Successful(DecodeResult(akk :+ r, remAfterSingle))
+              case f: Failure => f
+            }
+            case (f: Failure, _) => f
+          }
+        } yield valuesDr
+      }
+
+      // creates a coproduct vector codec for a sprocket using uint4 to encode the discriminator
+      val coproductVectorOfN = new CoproductVectorOfN[Int, Sprocket](uint4, params)
+
+      val encodedVector = coproductVectorOfN.encode(Vector(Woozle(3, 10), Wocket(1, true))).require
+
+      coproductVectorOfN.decode(encodedVector).require.value shouldBe Vector(Woozle(3, 10), Wocket(1, true))
+    }
+
+    "demonstrate coproductParams can use auto" in {
+      // You can also use .params[].auto to use auto discriminator resolution
+      val autoParams: CoproductParams[Sprocket, Int] = Codec.coproduct[Sprocket].params.auto
+    }
 
     "demonstrate choice" in {
       // The simplest way to create a codec from the builder is to use the

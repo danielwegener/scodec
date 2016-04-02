@@ -127,6 +127,8 @@ object ToCoproductCodecs {
   }
 }
 
+case class CoproductParams[R, A](discriminatorCodec:Codec[A], coproductToDiscriminator:R=>Attempt[A], discriminatorToCoproductCodec:A=>Option[Codec[R]])
+
 /**
  * Supports building a coproduct codec.
  *
@@ -141,8 +143,8 @@ object ToCoproductCodecs {
  * one of the methods on [[NeedDiscriminators]]. The former uses the type index as the discriminator value.
  *
  * For example: {{{
-(int32 :+: bool(8) :+: variableSizeBytes(uint8, ascii)).discriminatedByIndex(uint8)
- }}}
+*(int32 :+: bool(8) :+: variableSizeBytes(uint8, ascii)).discriminatedByIndex(uint8)
+ *}}}
  * The first 8 bits of the resulting binary contains the discriminator value due to usage of the `uint8` codec as
  * the discriminator codec. A discriminator value of 0 causes the remaining bits to be encoded/decoded with `int32`.
  * Similarly, a value of 1 causes the remaining bits to be encoded/decoded with `bool(8)` and a value of 2 causes
@@ -151,8 +153,8 @@ object ToCoproductCodecs {
  * Alternatively, discriminator values can be explicitly specified using `discriminatedBy(codec).using(Sized(...))`.
  *
  * For example: {{{
- (int32 :+: bool(8) :+: variableSizeBytes(uint8, ascii)).discriminatedBy(fixedSizeBytes(1, ascii)).using(Sized("i", "b", "s"))
- }}}
+ *(int32 :+: bool(8) :+: variableSizeBytes(uint8, ascii)).discriminatedBy(fixedSizeBytes(1, ascii)).using(Sized("i", "b", "s"))
+ *}}}
  * In this example, integers are associated with the discriminator `i`, booleans with `b`, and strings with `s`. The discriminator
  * is encoded with `fixedSizeBytes(1, ascii)`.
  *
@@ -176,6 +178,38 @@ final class CoproductCodecBuilder[C <: Coproduct, L <: HList, R] private[scodec]
   /** Adds a codec to the head of this coproduct codec. */
   def :+:[A](left: Codec[A]): CoproductCodecBuilder[A :+: C, Codec[A] :: L, A :+: C] =
     CoproductCodecBuilder(left :: codecs)
+
+  def paramsDiscriminatedByIndex(discriminatorCodec: Codec[Int]): NeedsDiscriminatorsForParams[Int] =
+    new NeedsDiscriminatorsForParams[Int](discriminatorCodec)
+
+  def paramsDiscriminatedBy[A](discriminatorCodec: Codec[A]): NeedsDiscriminatorsForParams[A] = {
+    new NeedsDiscriminatorsForParams[A](discriminatorCodec)
+  }
+
+  def params[A](implicit discriminated: Discriminated[R, A]): NeedsDiscriminatorsForParams[A] = {
+    new NeedsDiscriminatorsForParams[A](discriminated.codec)
+  }
+
+  class NeedsDiscriminatorsForParams[A] private[CoproductCodecBuilder](discriminatorCodec: Codec[A]) {
+
+    def using[N <: Nat](discriminators: Sized[Seq[A], N])(implicit ev: ops.coproduct.Length.Aux[C, N]): CoproductParams[R,A] = {
+      usingUnsafe(discriminators.seq)
+    }
+
+    def auto(implicit auto: CoproductBuilderAutoDiscriminators[R, C, A]): CoproductParams[R,A] = usingUnsafe(auto.discriminators)
+
+    private def usingUnsafe(discriminators: Seq[A]): CoproductParams[R,A] = {
+      val cs = aux(codecs)
+      val toDiscriminator: C => A = c => discriminators(CoproductCodec.indexOf(c))
+      val fromDiscriminator: A => Option[Codec[R]] = a => {
+        val idx = discriminators.indexWhere { (x: A) => x == a }
+        if (idx >= 0) Some(cs(idx).exmap(cToR,rToC)) else None
+      }
+      val toRDiscriminator:R=>Attempt[A] = r => rToC(r).map(toDiscriminator)
+      CoproductParams[R,A](discriminatorCodec, toRDiscriminator, fromDiscriminator)
+    }
+  }
+
 
   /**
    * Automatically generates a `Codec[R]` given an implicit `Discriminated[R, A]` and an implicit
